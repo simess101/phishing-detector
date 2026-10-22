@@ -186,3 +186,55 @@ trying new models:
 - Add legit hostnames that have subdomains to training (from a DNS-based top list
   like Cisco Umbrella, which lists full hostnames like docs.google.com).
 - Score Tranco by rank bucket so long-tail label noise is visible.
+
+---
+
+## 2026-10-22 · Notebook 04: fixing the features and the data
+
+**Goal:** Fix the subdomain shortcut found in notebook 03, and figure out whether
+better features or better data does more.
+
+**What I changed:**
+- Features (E): parse hosts with the Public Suffix List (tldextract) into subdomain,
+  owner label, and suffix, with an explicit is_free_hosting flag (PSL private section
+  plus my own list for platforms like gitbook.io) and a brand_mismatch check.
+- Data (+U): add 50,000 legit hostnames from the Cisco Umbrella top 100k. 74% have
+  a subdomain, and 11% are on free hosting. I dropped any host whose registered
+  domain appears in the benchmark, and the overlap check confirmed nothing leaked.
+
+**Results:**
+
+| model | history FA | history FA (subdomain) | recall | recall (platform) | recall (other) | hist vs phish PR-AUC | hist FA @ 90% recall |
+|---|---|---|---|---|---|---|---|
+| C · lexical | 0.390 | 0.845 | 0.880 | 0.962 | 0.678 | 0.853 | 0.422 |
+| C+U | 0.115 | 0.232 | 0.613 | 0.662 | 0.494 | 0.799 | 0.385 |
+| E · PSL | 0.350 | 0.720 | 0.937 | 1.000 | 0.782 | 0.910 | 0.329 |
+| E+U | 0.104 | 0.196 | 0.837 | 0.991 | 0.460 | 0.879 | 0.214 |
+| D · n-grams | 0.281 | 0.435 | 0.953 | 0.986 | 0.874 | 0.873 | 0.187 |
+| D+U | 0.144 | 0.190 | 0.883 | 0.967 | 0.678 | 0.911 | 0.184 |
+
+**What I learned:**
+
+The data fix did most of the work. Adding Umbrella cut false alarms on legit
+subdomains from 85% to 23% (C), 72% to 20% (E), and 44% to 19% (D).
+
+The PSL features mattered in combination. With Umbrella, C's platform recall
+collapsed from 96% to 66% because it had been relying on the subdomain shortcut.
+E+U kept 99% platform recall because is_free_hosting gives it a legitimate signal
+for the same thing. is_free_hosting is E+U's second most important feature.
+
+The cost is non-platform phishing: E+U catches only 46% of it. Once the model stops
+treating subdomains as suspicious, ordinary-looking phishing domains have little
+left to give them away.
+
+At equal recall (90%), D+U and D tie for best at about 18% history false alarms.
+D+U has the best ranking score (0.911) and is saved as host_v2.joblib.
+
+**Remaining errors:** D+U flags the hosting platforms' own homepages (weebly.com,
+blogspot.com, ngrok.io) because it learned those names from phishing hosted on them.
+It misses compromised legit sites where the phishing is in the path, URL shorteners,
+and platforms missing from my list (teleporthq.app, edgeone.dev).
+
+**Decision:** Host-only models have hit a ceiling around 18% false alarms at 90%
+recall, which is far too high for real use. The remaining misses can't be detected
+from the hostname, so the next step has to bring in information beyond it.
