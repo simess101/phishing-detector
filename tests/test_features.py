@@ -48,3 +48,26 @@ def test_host_only():
     assert host_only("https://www.paypal.com/login?x=1") == "paypal.com"
     assert host_only("secure-login.xyz/verify") == "secure-login.xyz"
     assert host_only("http://192.168.1.5:8080/a") == "192.168.1.5"
+
+
+from phishdetect.features import featurize_host, split_host, HOST_FEATURE_NAMES
+
+
+def test_split_host_basic_and_country_suffix():
+    p = split_host("https://docs.google.com/document/d/1")
+    assert (p["sub"], p["owner"], p["suffix"], p["platform"]) == ("docs", "google", "com", False)
+    assert split_host("bbc.co.uk")["suffix"] == "co.uk"
+
+
+def test_split_host_free_hosting():
+    p = split_host("https://gemini-login-b.webflow.io/")    # in the PSL private section
+    assert p["platform"] and p["owner"] == "gemini-login-b"
+    p = split_host("http://abc.gitbook.io/")                # in our EXTRA_PLATFORMS list
+    assert p["platform"] and p["owner"] == "abc" and p["sub"] == ""
+
+
+def test_brand_mismatch():
+    f = featurize_host(["https://www.paypal.com", "paypal.com.secure-verify.ru", "apple-id.top"])
+    assert list(f["brand_in_host"]) == [1, 1, 1]
+    assert list(f["brand_mismatch"]) == [0, 1, 1]
+    assert list(f.columns) == HOST_FEATURE_NAMES

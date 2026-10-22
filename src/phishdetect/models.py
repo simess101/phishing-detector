@@ -14,7 +14,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
 
-from .features import featurize, host_only, normalize_url
+from .features import featurize, featurize_host, host_only, normalize_url
 
 PATH_FEATURES = ["path_len", "query_len", "has_double_slash_path"]
 
@@ -25,17 +25,22 @@ def raw_url(url: str) -> str:
 
 
 class FeatureForest:
-    """Random forest on the hand-built features, computed from one 'view' of the URL."""
+    """Random forest on hand-built features, computed from one 'view' of the URL.
 
-    def __init__(self, view=raw_url, drop=(), random_state=42, **rf_kwargs):
+    featurizer is featurize (19 lexical features, notebooks 01 to 03) or
+    featurize_host (PSL-based host features, notebook 04).
+    """
+
+    def __init__(self, view=raw_url, drop=(), random_state=42, featurizer=featurize, **rf_kwargs):
         self.view = view
         self.drop = list(drop)
+        self.featurizer = featurizer
         params = dict(n_estimators=300, min_samples_leaf=2, n_jobs=-1, random_state=random_state)
         params.update(rf_kwargs)
         self.model = RandomForestClassifier(**params)
 
     def _features(self, urls):
-        return featurize([self.view(str(u)) for u in urls]).drop(columns=self.drop)
+        return self.featurizer([self.view(str(u)) for u in urls]).drop(columns=self.drop)
 
     def fit(self, urls, y):
         X = self._features(urls)
@@ -85,3 +90,8 @@ def build_models(random_state=42) -> dict:
         "C · host only": FeatureForest(host_only, ["has_https"] + PATH_FEATURES, random_state),
         "D · host char n-grams": HostCharNgram(),
     }
+
+
+def host_psl_forest(random_state=42) -> FeatureForest:
+    """Model E: random forest on the PSL-based host features."""
+    return FeatureForest(host_only, [], random_state, featurizer=featurize_host)

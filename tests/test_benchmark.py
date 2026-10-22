@@ -63,3 +63,19 @@ def test_empty_history_keeps_int_labels(tmp_path):
     other = pd.DataFrame({"url": ["https://a.com"], "source": ["tranco"], "is_phishing": [0]})
     merged = pd.concat([other, load_chrome_history(path=tmp_path / "nope")])
     assert merged["is_phishing"].dtype.kind == "i"
+
+
+def test_umbrella_filters_and_excludes(tmp_path):
+    from phishdetect.benchmark import load_umbrella
+    rows = ["1,docs.google.com", "2,mail.yahoo.com", "3,10.0.0.1", "4,localhost",
+            "5,_dmarc.example.com", "6,1.0.0.127.in-addr.arpa", "7,api.github.com", "200000,far.example.com"]
+    path = tmp_path / "u.csv.zip"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("top-1m.csv", "\n".join(rows))
+    df = load_umbrella(n=100, top_k=100_000, exclude_domains={"github.com"}, path=path)
+    assert set(df["url"]) == {"https://docs.google.com", "https://mail.yahoo.com"}
+
+
+def test_defang():
+    from phishdetect.benchmark import defang
+    assert defang("https://evil.com/login") == "hxxps://evil[.]com/login"
