@@ -131,3 +131,58 @@ phishy because they mostly appear in the phishing data as impersonation targets.
 a real-world evaluation set of legit URLs with subdomains and paths plus fresh
 phishing URLs, and add better legit training data (e.g., the Tranco top domains
 list). The saved host_model.joblib is a record, not a production model.
+
+---
+
+## 2026-10-22 · Notebook 03: real-world benchmark
+
+**Goal:** Score every model on data from outside PhiUSIIL, since notebook 02 showed
+the test set shares the training data's blind spots.
+
+**Benchmark:** 5,000 Tranco domains (half top 10k, half long tail), 374 URLs from my
+own Chrome history, and 300 live OpenPhish URLs from 2026-10-22. Under 8% of
+benchmark hosts appeared in training, so results reflect generalization, not memory.
+
+**Results (threshold 0.5):**
+
+| model | Tranco FA | history FA | OpenPhish recall | bench PR-AUC |
+|---|---|---|---|---|
+| A · original | 0.910 | 1.000 | 1.000 | 0.360 |
+| B · no scheme | 0.073 | 1.000 | 1.000 | 0.433 |
+| C · host only | 0.119 | 0.390 | 0.880 | 0.737 |
+| D · host char n-grams | 0.251 | 0.281 | 0.953 | 0.410 |
+
+**What I learned:**
+
+C beats D on real data (0.737 vs 0.410 PR-AUC), the reverse of the test-set ranking.
+That's the second time the test set picked the wrong model. B's perfect recall is
+meaningless because it flags anything with a path.
+
+No model is usable yet. At 0.5, D raises about 1,360 false alarms to catch 286
+phishing URLs, and real-world phishing is much rarer than in this benchmark.
+
+The subdomain theory held. On my history, C flags 2% of legit URLs without a
+subdomain and 84% of those with one.
+
+Phishing has moved to free hosting platforms: 63% of today's OpenPhish URLs vs 23%
+in training, while Freenom TLDs fell from 4.0% to 0.7%. The phishing part is an
+attacker-chosen subdomain (e.g. something.webflow.io). So the "subdomain means
+phishing" shortcut that causes false alarms on my history is also a big part of the
+models' recall. Fixing one will probably cost some of the other.
+
+**Benchmark caveats:** Tranco ranks popularity, not safety. Some of D's Tranco
+"false alarms" are gambling mirrors, proxies, and download sites from the long tail,
+so the Tranco FA rate is partly label noise. Host-only models also can't catch
+compromised legit sites where the phishing lives in the path (a hacked winery site,
+a WordPress install).
+
+**Decision:** Notebook 04 fixes the training data and the features instead of
+trying new models:
+- Use the Public Suffix List (tldextract) to split hosts into subdomain, registered
+  domain, and suffix properly. It also knows that workers.dev and webflow.io are
+  shared hosting, where the subdomain belongs to whoever signed up.
+- Add a "hosted on a free platform" feature instead of letting the model learn
+  "subdomain means phishing."
+- Add legit hostnames that have subdomains to training (from a DNS-based top list
+  like Cisco Umbrella, which lists full hostnames like docs.google.com).
+- Score Tranco by rank bucket so long-tail label noise is visible.
