@@ -60,7 +60,7 @@ The only signal that looked real was TLDs. Phishing leans toward `.app`, `.io`, 
 
 ---
 
-## 2026-10-22 · Notebook 02: removing the leaks (plan)
+## 2026-10-22 · Notebook 02: removing the leaks
 
 **Goal:** Find the honest score.
 
@@ -75,13 +75,59 @@ I'll also score a handful of real legit URLs with paths (Amazon, GitHub, Google 
 
 I added `normalize_url` and `host_only` helpers to `features.py`, with tests, so the API and browser extension will clean URLs exactly the same way later on.
 
-**Results:** _fill in after running_
+**Results (same test set, 47,074 URLs):**
 
 | experiment | precision | recall | PR-AUC |
 |---|---|---|---|
-| A · original | | | |
-| B · no scheme | | | |
-| C · host only | | | |
-| D · host char n-grams | | | |
+| A · original | 0.9989 | 0.9915 | 0.9982 |
+| B · no scheme | 0.9504 | 0.7296 | 0.9101 |
+| C · host only | 0.8877 | 0.6357 | 0.8577 |
+| D · host char n-grams | 0.9192 | 0.7800 | 0.9328 |
 
-**What I learned:** _fill in_
+**What I learned:** Removing the leaks dropped PR-AUC from 0.998 to 0.858 and recall
+from 99% to 64%, so most of notebook 01's score came from how the data was collected.
+In C, feature importance is spread across entropy, TLD length, dots, subdomains, and
+digits, with no single dominant feature, which is what a non-cheating model looks like.
+
+The char n-gram model (D) beat my hand-built features on every test-set metric. Its
+top phishing n-grams are Freenom's free TLDs (.cf, .ga, .ml, .gq) plus shared hosting
+(ipfs, web.app). Legit leans on .gov, .edu, and country TLDs. It also learned that
+"jp." mid-hostname means impersonation (amazon-co-jp.evil.cn) while ".jp" at the end
+is legit. The concern is that D is largely a TLD classifier, some of that is dataset
+bias in how legit sites were chosen, and Freenom stopped free registrations in 2023,
+so it's partly learning old attack patterns. That's a drift risk to monitor later.
+
+**Path check after normalizing:** 0% of legit URLs have a path vs 23.4% of phishing,
+so stripping the scheme alone (experiment B) still leaves the path leak. Only the
+host-only view (C) removes both.
+
+**Side finding:** some phishing is hosted on shared platforms like Firebase
+(`*.web.app`) and IPFS gateways (`cloudflare-ipfs.com/ipfs/...`). For IPFS, the
+hostname belongs to a legitimate service and the malicious part lives in the path,
+so a host-only model is blind to it. That's a known limitation of experiment C,
+and a reason to collect legit URLs with paths later so the path can be used safely.
+
+**Reality check:** I scored 8 real legit URLs (Amazon, GitHub, Google Docs, Gmail,
+Wikipedia, LinkedIn, Stack Overflow, VCU) and 4 made-up phishing URLs. All three
+models caught every phishing URL. False alarms on the legit links at a 0.5 threshold:
+
+| model | legit falsely flagged | test-set PR-AUC |
+|---|---|---|
+| B · no scheme | 8 of 8 | 0.910 |
+| C · host only | 3 of 8 | 0.858 |
+| D · char n-grams | 5 of 8 | 0.933 |
+
+B flagged every link with a path, which confirms the path leak. More surprising, D
+had the best test-set score but the worst real-world behavior. The test set shares
+the training data's biases, so it can't reveal them. Only outside data can.
+
+**Third leak, subdomains:** Every legit training URL was www.something.tld, so after
+stripping www., legit hosts never have a subdomain. The models learned that any
+subdomain means phishing, which is why docs.google.com, mail.google.com, and
+en.wikipedia.org got flagged. Brand names like "amazon" and "linkedin" also look
+phishy because they mostly appear in the phishing data as impersonation targets.
+
+**Decision:** Model choice isn't the bottleneck. The legit data is. Next I'll build
+a real-world evaluation set of legit URLs with subdomains and paths plus fresh
+phishing URLs, and add better legit training data (e.g., the Tranco top domains
+list). The saved host_model.joblib is a record, not a production model.
