@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.egg-info/
+data/raw/*
+!data/raw/.gitkeep
+models/*
+!models/.gitkeep
+.DS_Store
+.env
