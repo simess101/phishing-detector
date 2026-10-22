@@ -9,3 +9,4 @@ models/*
 !models/.gitkeep
 .DS_Store
 .env
+.pytest_cache/

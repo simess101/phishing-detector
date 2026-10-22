@@ -96,3 +96,25 @@ def extract_features(url: str) -> dict:
 def featurize(urls) -> pd.DataFrame:
     """Vectorized helper: list/Series of URLs -> feature DataFrame."""
     return pd.DataFrame([extract_features(str(u)) for u in urls], columns=FEATURE_NAMES)
+
+
+_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
+_WWW_RE = re.compile(r"^www\d*\.", re.IGNORECASE)
+
+
+def normalize_url(url: str) -> str:
+    """Strip the scheme and a leading 'www.' so neither can leak the label.
+
+    'https://www.PayPal.com/login' -> 'PayPal.com/login'
+    """
+    url = _SCHEME_RE.sub("", str(url).strip())
+    return _WWW_RE.sub("", url)
+
+
+def host_only(url: str) -> str:
+    """Just the hostname, lowercased, without 'www.'.
+
+    'https://www.paypal.com/login?x=1' -> 'paypal.com'
+    """
+    host = (_parse(str(url)).hostname or "").lower()
+    return _WWW_RE.sub("", host)
