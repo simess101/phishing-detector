@@ -148,6 +148,9 @@ EXTRA_PLATFORMS = {
     "godaddysites.com", "glitch.me", "framer.website", "framer.app", "webwave.dev",
     "mybluehost.me", "teachable.com", "notion.site", "sites.google.com", "jimdosite.com",
     "strikingly.com", "carrd.co", "ipfs.io", "dweb.link", "w3s.link",
+    # added after notebook 04's error analysis
+    "teleporthq.app", "edgeone.dev", "edgeone.app", "ngrok-free.app", "ngrok.app",
+    "ngrok.io", "plesk.page", "g.page",
 }
 
 _TLD_EXTRACT = None
@@ -178,12 +181,21 @@ def split_host(url: str) -> dict:
 def _split_cached(host: str) -> tuple:
     r = _extractor()(host)
     sub, domain, suffix = r.subdomain, r.domain, r.suffix
-    registered = f"{domain}.{suffix}" if domain and suffix else (domain or suffix)
-    platform = bool(getattr(r, "is_private", False)) or registered in EXTRA_PLATFORMS
+    if not domain and suffix:
+        # The host IS a platform's own domain (blogspot.com, cloudflare-ipfs.com):
+        # treat it as an ordinary site owned by the platform, not as a user page.
+        domain, suffix = suffix.split(".", 1) if "." in suffix else (suffix, "")
+        registered, platform = r.suffix, False
+    else:
+        registered = f"{domain}.{suffix}" if domain and suffix else (domain or suffix)
+        platform = bool(getattr(r, "is_private", False))
     owner = domain
     if registered in EXTRA_PLATFORMS and sub:
+        # A user page on a platform the PSL doesn't list (abc.gitbook.io).
         owner = sub.split(".")[-1]
         sub = ".".join(sub.split(".")[:-1])
+        registered = f"{owner}.{registered}"
+        platform = True
     return tuple({"host": host, "sub": sub, "domain": domain, "suffix": suffix,
                   "registered": registered, "platform": platform, "owner": owner}.items())
 

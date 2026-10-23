@@ -9,7 +9,7 @@ benchmark without knowing how each one sees a URL.
 from __future__ import annotations
 
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
@@ -31,13 +31,16 @@ class FeatureForest:
     featurize_host (PSL-based host features, notebook 04).
     """
 
-    def __init__(self, view=raw_url, drop=(), random_state=42, featurizer=featurize, **rf_kwargs):
+    def __init__(self, view=raw_url, drop=(), random_state=42, featurizer=featurize,
+                 estimator=None, **rf_kwargs):
         self.view = view
         self.drop = list(drop)
         self.featurizer = featurizer
-        params = dict(n_estimators=300, min_samples_leaf=2, n_jobs=-1, random_state=random_state)
-        params.update(rf_kwargs)
-        self.model = RandomForestClassifier(**params)
+        if estimator is None:
+            params = dict(n_estimators=300, min_samples_leaf=2, n_jobs=-1, random_state=random_state)
+            params.update(rf_kwargs)
+            estimator = RandomForestClassifier(**params)
+        self.model = estimator
 
     def _features(self, urls):
         return self.featurizer([self.view(str(u)) for u in urls]).drop(columns=self.drop)
@@ -52,6 +55,7 @@ class FeatureForest:
         return self.model.predict_proba(self._features(urls))[:, 1]
 
     def feature_importances(self) -> pd.Series:
+        """Random forest only; boosted models don't expose this directly."""
         return pd.Series(self.model.feature_importances_, index=self.columns_).sort_values()
 
 
@@ -95,3 +99,13 @@ def build_models(random_state=42) -> dict:
 def host_psl_forest(random_state=42) -> FeatureForest:
     """Model E: random forest on the PSL-based host features."""
     return FeatureForest(host_only, [], random_state, featurizer=featurize_host)
+
+
+def host_psl_boosted(random_state=42) -> FeatureForest:
+    """Model E with gradient boosting instead of a random forest.
+
+    Same features, but the saved model is a few MB instead of hundreds, which
+    matters once it ships inside a Docker image.
+    """
+    est = HistGradientBoostingClassifier(max_iter=300, learning_rate=0.1, random_state=random_state)
+    return FeatureForest(host_only, [], random_state, featurizer=featurize_host, estimator=est)
