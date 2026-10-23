@@ -238,3 +238,47 @@ and platforms missing from my list (teleporthq.app, edgeone.dev).
 **Decision:** Host-only models have hit a ceiling around 18% false alarms at 90%
 recall, which is far too high for real use. The remaining misses can't be detected
 from the hostname, so the next step has to bring in information beyond it.
+
+---
+
+## 2026-10-23 · Notebook 05: v1 detector
+
+**Goal:** Turn the host models into a shippable detector with a threshold chosen
+honestly, since notebook 04 ended at 18% history false alarms for 90% recall.
+
+**What I built:** PhishDetector, which averages E+U (gradient boosted) and D+U,
+trusts registered domains in the Tranco top 10k (minus platforms and shorteners),
+applies a threshold, and explains each verdict. I split the benchmark in half by
+registered domain, picked each system's threshold on the calibration half (lowest
+threshold with at most 5% false alarms on my history), and scored on the other half.
+
+**Results (evaluation half):**
+
+| system | threshold | history FA | Tranco tail FA | recall | size |
+|---|---|---|---|---|---|
+| D+U | 0.838 | 0.0% | 4.4% | 57.6% | 3.4 MB |
+| E+U (forest) | 0.985 | 0.0% | 0.1% | 12.7% | 79.6 MB |
+| E+U (boosted) | 0.988 | 0.0% | 0.1% | 32.7% | 0.5 MB |
+| ensemble | 0.887 | 0.0% | 0.4% | 49.1% | 3.9 MB |
+| ensemble + allowlist | 0.368 | 1.2% | 22.4% | 87.9% | 3.9 MB |
+
+**What I learned:**
+
+The allowlist did the heavy lifting. It covers 56% of my history, so the threshold
+could drop from 0.887 to 0.368 and recall rose from 49% to 88% while history false
+alarms stayed near 1%. It cost 2 of 300 OpenPhish URLs, both on Backblaze B2 file
+storage, which should be treated as a platform.
+
+Gradient boosting beat the random forest on recall at 1/160th of the size.
+
+**Known weaknesses:**
+- 22% false alarms on long-tail Tranco sites. The threshold was tuned on my history,
+  which is mostly popular sites, so users of niche sites would see many warnings.
+- Any free-hosting page is flagged (platform recall 100%, a github.io portfolio
+  scored 0.985), because nearly all platform pages in training were phishing.
+- The OpenPhish feed was re-downloaded on 2026-10-23, so recall isn't exactly
+  comparable with notebooks 03 and 04. Future notebooks should pin a snapshot.
+
+**Decision:** Ship detector_v1 behind an API as a demo, with these numbers and
+weaknesses documented. Fix the platform list (backblazeb2 and other cloud storage)
+in the next pass.
