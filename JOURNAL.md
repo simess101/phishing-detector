@@ -282,3 +282,31 @@ Gradient boosting beat the random forest on recall at 1/160th of the size.
 **Decision:** Ship detector_v1 behind an API as a demo, with these numbers and
 weaknesses documented. Fix the platform list (backblazeb2 and other cloud storage)
 in the next pass.
+
+---
+
+## 2026-10-23 · Stage 3: API, Docker, and CI
+
+**Goal:** Put the v1 detector behind an HTTP API so other programs (a browser
+extension, a dashboard) can use it.
+
+**What I built:**
+- A FastAPI service with /health, /model (the model card), /check (one URL), and
+  /check/batch (up to 100). Each verdict comes with a score, both component model
+  scores, and plain-English reasons. It loads the model once at startup, and if the
+  model file is missing it still starts and reports the problem on /health.
+- A Dockerfile on Python 3.13 slim with pinned runtime packages, running as a
+  non-root user with a health check. A .dockerignore keeps data and my venv out.
+- GitHub Actions that run pytest on every push, then build the Docker image and
+  send it a real request. The real model isn't in git, so CI trains a tiny stand-in.
+- 36 tests, including API tests for bad input and a missing model.
+
+**Problems I hit:**
+- A pickled scikit-learn model may not load under a different scikit-learn
+  version, so requirements-api.txt pins the exact versions I trained with.
+- Typing `uvicorn` ran Homebrew's copy instead of my venv's, which couldn't find my
+  package. `python -m uvicorn` always uses the active environment's copy.
+
+**Result:** The live API returns a phishing verdict for
+secure-login-appleid.webflow.io (score 0.998, threshold 0.368) with reasons, in
+about 94 ms for the first request.

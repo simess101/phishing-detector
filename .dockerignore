@@ -1,0 +1,14 @@
+# Keep the build context small: only what the Dockerfile copies.
+.venv/
+.git/
+data/
+notebooks/
+reports/
+tests/
+**/__pycache__/
+**/*.egg-info/
+.pytest_cache/
+models/*
+!models/detector_v1.joblib
+!models/detector_v1.json
+*.md

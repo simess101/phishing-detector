@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run tests
+        run: pytest -q
+
+  # Checks that the Dockerfile builds. The real model isn't in git, so this
+  # trains a tiny stand-in model just to prove the image starts and answers.
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Make a stand-in model
+        run: |
+          pip install -r requirements-api.txt
+          pip install -e .
+          python scripts/make_dummy_model.py models/detector_v1.joblib
+
+      - name: Build image
+        run: docker build -t phishdetect .
+
+      - name: Smoke test
+        run: |
+          docker run -d --name api -p 8000:8000 phishdetect
+          for i in $(seq 1 30); do curl -sf localhost:8000/health && break; sleep 1; done
+          curl -sf -X POST localhost:8000/check -H 'Content-Type: application/json' \
+            -d '{"url": "http://paypal-account-verify.xyz/login"}' | tee /dev/stderr | grep -q verdict
+          docker rm -f api
