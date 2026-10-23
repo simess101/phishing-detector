@@ -1,5 +1,5 @@
 # Phishing URL Detector
-
+![CI](https://github.com/simess101/phishing-detector/actions/workflows/ci.yml/badge.svg)
 A machine learning system that flags phishing URLs, built in stages from a scikit-learn baseline up to a deployed API with a browser extension.
 
 ## Status
