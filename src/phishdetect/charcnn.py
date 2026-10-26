@@ -96,11 +96,16 @@ class CharCNNClassifier:
     """Trainable wrapper with the phish_proba(urls) interface used everywhere else."""
 
     def __init__(self, embed_dim=48, filters=128, widths=(3, 5, 7), dropout=0.3,
-                 max_len=MAX_LEN, min_char_count=5, seed=42):
+                 max_len=MAX_LEN, min_char_count=5, seed=42, drop_query=False):
         self.config = dict(embed_dim=embed_dim, filters=filters, widths=tuple(widths), dropout=dropout)
         self.max_len, self.min_char_count, self.seed = max_len, min_char_count, seed
+        self.drop_query = drop_query
         self.vocab, self.net, self.history = None, None, []
         self.device = None
+
+    def _norm(self, url):
+        # getattr: models saved before drop_query existed (notebook 07) still load
+        return normalize_full_url(url, self.max_len, drop_query=getattr(self, "drop_query", False))
 
     # ----- training -------------------------------------------------------
     def fit(self, urls, y, val_urls=None, val_y=None, epochs=10, batch_size=256, lr=2e-3,
@@ -115,10 +120,10 @@ class CharCNNClassifier:
         rng = np.random.default_rng(self.seed)
         self.device = device or best_device()
 
-        texts = [normalize_full_url(u, self.max_len) for u in urls]
+        texts = [self._norm(u) for u in urls]
         self.vocab = CharVocab.build(texts, self.min_char_count)
         X = torch.from_numpy(self.vocab.encode(texts, self.max_len))
-        Y = torch.as_tensor(np.asarray(y), dtype=torch.float32)
+        Y = torch.tensor(np.asarray(y, dtype=np.float32))     # copy: avoids a read-only warning
 
         self.net = _build_net(len(self.vocab), **self.config).to(self.device)
         opt = torch.optim.AdamW(self.net.parameters(), lr=lr, weight_decay=weight_decay)
@@ -171,7 +176,7 @@ class CharCNNClassifier:
             raise RuntimeError("model is not trained")
         device = self.device or best_device()
         self.net.to(device).eval()
-        texts = [normalize_full_url(u, self.max_len) for u in urls]
+        texts = [self._norm(u) for u in urls]
         X = torch.from_numpy(self.vocab.encode(texts, self.max_len))
         out = []
         with torch.no_grad():

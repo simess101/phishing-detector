@@ -393,3 +393,37 @@ the brand gap from notebook 04.
 
 **Next:** retrain with query strings removed, freeze the benchmark, and add a
 brand lookalike check to v1.
+
+---
+
+## 2026-10-26 · Notebook 08: removing query strings, on a frozen benchmark
+
+**Goal:** Test whether notebook 07's false alarms came from a query-string shortcut,
+and stop the benchmark from drifting.
+
+**Frozen benchmark:** Saved once (2026-10-26) to data/processed/. v1's scores match
+notebook 07 exactly, and they won't drift with my Chrome history anymore.
+
+**Results (evaluation half, 172 history URLs, 165 OpenPhish URLs):**
+
+| system | threshold | history FA | recall | recall (other) |
+|---|---|---|---|---|
+| v1 | 0.310 | 5.8% | 91.5% | 80.3% |
+| TF-IDF / no-q | 0.993 / 0.968 | 2.9% / 4.1% | 18.8% / 53.9% | 4.2% / 31.0% |
+| CNN / no-q | 1.000 / 0.998 | 2.9% / 1.7% | 17.6% / 43.6% | 5.6% / 28.2% |
+| v1 + CNN no-q | 0.375 | 4.7% | 89.1% | 74.6% |
+
+**What I learned:** Stripping queries roughly tripled what both full-URL models catch,
+so the shortcut was real. But their thresholds are still near 1.0 and the leak
+detector barely moved (0.891 to 0.886), so queries weren't the whole story. The
+notebook 07 probe was confounded: "example.com/index.html" scores about 0.9 with no
+query at all, while "search?q=shoes" scores low. Something else in real browsing
+still looks phishy to these models.
+
+v1 + CNN no-q newly caught 4 phishing URLs, all hacked WordPress sites (wp-admin,
+wp-content), which is exactly what stage 2 was for. But it newly missed 8, mostly
+Roblox lookalikes that v1 only barely caught; averaging pulled them under the
+threshold. Net, it doesn't beat v1. Not shipping.
+
+**Next:** a brand lookalike rule for v1, an "either model is confident" combination
+instead of averaging, and a private look at which history URLs the no-q models flag.

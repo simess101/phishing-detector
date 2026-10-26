@@ -30,7 +30,7 @@ _SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*://", re.I)
 _WWW = re.compile(r"^www\d*\.", re.I)
 
 
-def normalize_full_url(url: str, max_len: int = MAX_LEN) -> str:
+def normalize_full_url(url: str, max_len: int = MAX_LEN, drop_query: bool = False) -> str:
     """The one view of a URL that every model in stage 2 sees.
 
     lowercase, no scheme, no leading www., no #fragment, no trailing slash,
@@ -38,11 +38,16 @@ def normalize_full_url(url: str, max_len: int = MAX_LEN) -> str:
       'HTTPS://www.Example.com/Path/?q=1#top' -> 'example.com/path/?q=1'
       'https://example.com/'                 -> 'example.com'
     Each step removes a collection difference found between the sources.
+
+    drop_query=True also removes everything after "?" (notebook 08). Sitemap
+    URLs almost never have query strings, so a model can learn "? = phishing".
     """
     u = str(url).strip().lower()
     u = _SCHEME.sub("", u)
     u = _WWW.sub("", u)
     u = u.split("#", 1)[0]
+    if drop_query:
+        u = u.split("?", 1)[0]
     u = u.rstrip("/")
     return u[:max_len]
 
@@ -124,3 +129,31 @@ def shallow_stats(normalized: pd.Series) -> pd.DataFrame:
         "ends_php": s.str.contains(r"\.php(?:$|\?)", regex=True).astype(int),
         "n_digits": s.str.count(r"\d"),
     })
+
+
+class FullUrlTfidf:
+    """TF-IDF over 2 to 5 character chunks of the normalized full URL, then
+    logistic regression. Same phish_proba(urls) interface as the other models,
+    so it can go inside a PhishDetector."""
+
+    def __init__(self, drop_query: bool = False, ngram_range=(2, 5), min_df=3,
+                 max_features=300_000, C=4.0):
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.pipeline import make_pipeline
+        self.drop_query = drop_query
+        self.model = make_pipeline(
+            TfidfVectorizer(analyzer="char", ngram_range=ngram_range, min_df=min_df,
+                            sublinear_tf=True, max_features=max_features),
+            LogisticRegression(max_iter=2000, C=C),
+        )
+
+    def _texts(self, urls):
+        return [normalize_full_url(u, drop_query=self.drop_query) for u in urls]
+
+    def fit(self, urls, y):
+        self.model.fit(self._texts(urls), y)
+        return self
+
+    def phish_proba(self, urls):
+        return self.model.predict_proba(self._texts(urls))[:, 1]
