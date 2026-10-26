@@ -1,0 +1,3 @@
+# Deep learning extras for notebook 07 (not needed for the API or CI).
+# On a Mac this installs a build that can use the GPU (MPS).
+torch>=2.3

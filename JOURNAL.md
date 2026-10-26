@@ -310,3 +310,86 @@ extension, a dashboard) can use it.
 **Result:** The live API returns a phishing verdict for
 secure-login-appleid.webflow.io (score 0.998, threshold 0.368) with reasons, in
 about 94 ms for the first request.
+
+---
+
+## 2026-10-26 · Notebook 06: full-URL dataset and leak audit
+
+**Goal:** Build training data for a model that reads whole URLs (paths included),
+and check it for collection leaks before training, since PhiUSIIL leaked three ways.
+
+**Data:** Phishing from the Phishing.Database ACTIVE list (789k URLs, capped at 5 per
+domain). Legit from the Common Crawl index via my own collector (4,375 URLs from 365
+domains so far; the free index returned constant 504 errors, so collection is slow).
+Benchmark domains excluded from both. Balanced to 8,723 URLs.
+
+**Leak audit:** A model trained only on URL shape (length, slashes, .php, digits)
+reaches 0.805 PR-AUC with domain-grouped folds. Under my 0.95 danger line, so the
+classes aren't separable by shape alone. That's the bar the deep model has to beat.
+
+- Normalizing removed the raw differences (https, www., uppercase, trailing slash).
+- .php is the strongest remaining signal (4% legit vs 19% phishing), which is real.
+- 95.5% of legit URLs had a path vs 68% of phishing, because the collector rarely
+  samples homepages. Fixed by adding each legit domain's homepage.
+- Free hosting is 1.1% of legit vs 29% of phishing, because the collector skips
+  platform domains. The model will likely flag legit github.io pages, like v1.
+
+**Biggest limitation:** 365 legit domains vs 4,352 phishing domains. Validation and
+test get only about 36 legit domains each, so scores will be noisy until I collect more.
+
+**Update after more collection:** Common Crawl's index kept timing out (504s), so I
+wrote a second collector that reads each site's own sitemap.xml. It's 16 to 32 sites
+at a time since requests go to different servers, and it took about 30 minutes for
+10,000 domains. 3,256 returned pages (about a third). Final dataset: 76,727 URLs,
+3,639 legit domains (up from 365), 36,966 phishing domains.
+
+The leak detector rose from 0.805 to 0.891 (still under 0.95). The cause is the
+sitemap source itself: sitemaps list clean pages, so only 2.1% of sitemap URLs have
+a query string vs 21.5% from Common Crawl and 16% of phishing. Since sitemaps are
+87% of the legit data, "has a ?" now leans phishing in training but not in real
+browsing. I'll check for this in notebook 07 with a query-string probe and with
+false alarms on my browsing history.
+
+Adding homepages worked: legit has_path dropped from 95.5% to 90%. Free hosting
+is still almost absent from legit (0.2% vs 30.4% of phishing).
+
+---
+
+## 2026-10-26 · Notebook 07: char-CNN on full URLs
+
+**Goal:** Train a character-level CNN on full URLs (paths included) to catch phishing
+on hacked legit sites, which v1 can't see.
+
+**Training:** 61,572 URLs, 7 epochs of about 15 seconds each on the Mac GPU (MPS).
+Validation PR-AUC peaked at 0.985 in epoch 5, and early stopping kept that epoch.
+122,769 parameters.
+
+**Test set (same distribution as training):** leak detector 0.891, TF-IDF char
+n-grams 0.979, char-CNN 0.975. Both full-URL models clearly learned more than URL
+shape, but the simpler TF-IDF model matched the CNN.
+
+**Real benchmark (threshold at 5% false alarms on my history):**
+
+| system | history FA | Tranco tail FA | recall | recall (other) |
+|---|---|---|---|---|
+| v1 | 5.8% | 30.1% | 91.5% | 80.3% |
+| CNN alone | 4.1% | 0.2% | 25.5% | 11.3% |
+| v1 + CNN | 2.3% | 14.1% | 83.0% | 62.0% |
+
+The CNN needed a threshold of 1.000 to stay under 5% false alarms on my history.
+Combined with v1 it caught 0 new phishing URLs and missed 14 that v1 caught. Not
+shipping v2.
+
+**Why:** The sitemap shortcut I flagged in notebook 06. Sitemap URLs (87% of legit
+training data) almost never have query strings, so the model learned that "?"
+means phishing. A probe with "index.html?id=..." scored 0.892, and my real browsing
+is full of query strings. This is the third time an in-distribution test set picked
+a model that failed on real data.
+
+**Other findings:** v1's numbers moved since notebook 05 because my Chrome history
+and the OpenPhish snapshot changed, so the benchmark needs freezing. Most newly
+missed URLs were Roblox lookalikes on foreign suffixes (roblox.com.gr, roblox.ss),
+the brand gap from notebook 04.
+
+**Next:** retrain with query strings removed, freeze the benchmark, and add a
+brand lookalike check to v1.
